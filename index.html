@@ -337,7 +337,6 @@
       50% { opacity: 0.5; }
     }
 
-    /* Mobile-specific optimizations */
     @media (max-width: 768px) {
       .panel {
         top: 8px;
@@ -408,14 +407,58 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     // ============================================================
-    // ZOMBIE BUNKER MOBILE
-    // High-performance WebGL zombie shooter for mobile browsers
-    // Self-contained, procedural, no external assets
+    // ZOMBIE BUNKER MOBILE - WITH AUDIO & FIXED VISIBILITY
+    // ============================================================
+
+    // Web Audio Context for sound effects
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(frequency, duration, type = 'sine', volume = 0.3) {
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.type = type;
+        osc.frequency.value = frequency;
+
+        gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        // Audio context not available
+      }
+    }
+
+    function playGunshot() {
+      playSound(150, 0.1, 'square', 0.5);
+      playSound(200, 0.08, 'sawtooth', 0.3);
+    }
+
+    function playReload() {
+      playSound(300, 0.15, 'sine', 0.2);
+      setTimeout(() => playSound(400, 0.1, 'sine', 0.2), 150);
+    }
+
+    function playZombieMoan() {
+      playSound(80 + Math.random() * 40, 0.3, 'sine', 0.25);
+    }
+
+    function playZombieHit() {
+      playSound(120, 0.05, 'square', 0.4);
+    }
+
+    // ============================================================
+    // THREE.JS SCENE SETUP
     // ============================================================
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x090b10);
-    scene.fog = new THREE.FogExp2(0x090b10, 0.045);
+    scene.background = new THREE.Color(0x1a1f26);
+    scene.fog = new THREE.FogExp2(0x1a1f26, 0.035);
 
     const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 350);
     camera.rotation.order = "YXZ";
@@ -431,16 +474,21 @@
     renderer.shadowMap.enabled = false;
     document.body.appendChild(renderer.domElement);
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0x4c5b67, 0.85));
+    // ENHANCED LIGHTING - brighter for visibility
+    const ambientLight = new THREE.AmbientLight(0x8899bb, 1.2);
+    scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0x7c8ea6, 0.55);
-    dirLight.position.set(-10, 12, 8);
+    const dirLight = new THREE.DirectionalLight(0xccddff, 0.9);
+    dirLight.position.set(-15, 25, 15);
     scene.add(dirLight);
 
-    const flashlight = new THREE.PointLight(0xffe8c1, 1.35, 24, 2.0);
+    const flashlight = new THREE.PointLight(0xffffcc, 2.0, 40, 1.5);
     flashlight.position.set(0, 0.75, 0);
     camera.add(flashlight);
+
+    // Add hemisphere light for more ambient fill
+    const hemiLight = new THREE.HemisphereLight(0x4488ff, 0x220011, 0.7);
+    scene.add(hemiLight);
 
     // ============================================================
     // Procedural textures & materials
@@ -456,20 +504,20 @@
 
       if (kind === "metal") {
         for (let i = 0; i < 64; i += 2) {
-          ctx.strokeStyle = "rgba(255,255,255," + (0.03 + Math.random() * 0.12) + ")";
+          ctx.strokeStyle = "rgba(255,255,255," + (0.04 + Math.random() * 0.15) + ")";
           ctx.beginPath();
           ctx.moveTo(i, 0);
           ctx.lineTo(i, 64);
           ctx.stroke();
         }
       } else if (kind === "grit") {
-        for (let j = 0; j < 180; j++) {
-          ctx.fillStyle = "rgba(0,0,0," + (0.08 + Math.random() * 0.18) + ")";
+        for (let j = 0; j < 200; j++) {
+          ctx.fillStyle = "rgba(0,0,0," + (0.1 + Math.random() * 0.2) + ")";
           ctx.fillRect(Math.random() * 64, Math.random() * 64, 2 + Math.random() * 3, 2 + Math.random() * 3);
         }
       } else if (kind === "stripes") {
         for (let i = 0; i < 64; i += 4) {
-          ctx.fillStyle = (i % 8 === 0) ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)";
+          ctx.fillStyle = (i % 8 === 0) ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)";
           ctx.fillRect(i, 0, 2, 64);
         }
       }
@@ -481,21 +529,22 @@
     }
 
     function mat(base, kind = "plain") {
-      return new THREE.MeshLambertMaterial({
+      return new THREE.MeshPhongMaterial({
         map: makeCanvasTexture(base, kind),
+        shininess: 30,
         transparent: false
       });
     }
 
     // ============================================================
-    // Weapon model with recoil animation support
+    // Weapon model
     // ============================================================
     function createWeaponModel() {
       const group = new THREE.Group();
 
-      const metal = mat("#2c3036", "metal");
-      const dark = mat("#17191d", "stripes");
-      const accent = mat("#738397", "metal");
+      const metal = mat("#3d4149", "metal");
+      const dark = mat("#252933", "stripes");
+      const accent = mat("#8a9aaa", "metal");
 
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.14), metal);
       body.position.set(0.2, -0.06, 0);
@@ -533,16 +582,15 @@
     }
 
     // ============================================================
-    // Zombie model with animation-ready bones
+    // Zombie model - BRIGHTER COLORS FOR VISIBILITY
     // ============================================================
     function createZombieModel() {
       const group = new THREE.Group();
 
-      const skin = mat("#4f201d", "grit");
-      const dark = mat("#251611", "grit");
-      const eyeMat = mat("#c7d2dc", "metal");
+      const skin = mat("#775555", "grit");
+      const dark = mat("#553333", "grit");
+      const eyeMat = mat("#ffff99", "metal");
 
-      // Body parts for animation
       const torso = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.8, 0.28), skin);
       torso.position.set(0, 0.7, 0);
       torso.userData.joint = "torso";
@@ -592,18 +640,18 @@
     }
 
     // ============================================================
-    // Map / Environment
+    // Map
     // ============================================================
     const map = {
       size: 80,
       floorY: -1.2,
-      wallMaterial: mat("#1d2227", "grit")
+      wallMaterial: mat("#3a4551", "grit")
     };
 
     function buildMap() {
       const floor = new THREE.Mesh(
         new THREE.BoxGeometry(map.size, 1.6, map.size),
-        mat("#12181d", "grit")
+        mat("#2a3238", "grit")
       );
       floor.position.y = map.floorY;
       scene.add(floor);
@@ -630,7 +678,6 @@
         scene.add(mesh);
       }
 
-      // Props
       const props = [
         [-8, 0.9, -8], [8, 0.9, 8], [-12, 0.9, 12], [15, 0.9, -10],
         [0, 0.9, -22], [0, 0.9, 22], [-22, 0.9, 0], [22, 0.9, 0]
@@ -638,7 +685,7 @@
       props.forEach(([x, y, z], i) => {
         const crate = new THREE.Mesh(
           new THREE.BoxGeometry(2.2, 2.2, 2.2),
-          mat(i % 2 === 0 ? "#2b3036" : "#171b21", "grit")
+          mat(i % 2 === 0 ? "#4a5560" : "#3a4450", "grit")
         );
         crate.position.set(x, y, z);
         scene.add(crate);
@@ -767,7 +814,7 @@
     function bulletFactory() {
       const mesh = new THREE.Mesh(
         new THREE.SphereGeometry(0.11, 6, 6),
-        mat("#ffeec7", "metal")
+        mat("#ffff00", "metal")
       );
       mesh.userData = {
         active: false,
@@ -812,6 +859,9 @@
       zombie.phase = Math.random() * Math.PI * 2;
       zombie.time = 0;
       state.activeZombieCount++;
+
+      // Play zombie moan when spawned
+      setTimeout(() => playZombieMoan(), Math.random() * 500);
     }
 
     function deactivateZombie(zombie) {
@@ -851,12 +901,12 @@
     }
 
     // ============================================================
-    // Muzzle flash effect
+    // Muzzle flash
     // ============================================================
     function triggerMuzzleFlash() {
       const flash = hudRefs.muzzleFlash;
       flash.classList.remove("burst");
-      void flash.offsetWidth; // Trigger reflow to restart animation
+      void flash.offsetWidth;
       flash.classList.add("burst");
     }
 
@@ -877,12 +927,11 @@
       state.lastShotAt = now;
       state.ammo -= 1;
 
-      // Recoil
       player.recoilKickback = 0.12;
       player.recoilRotation = (Math.random() - 0.5) * 0.08;
 
-      // Muzzle flash
       triggerMuzzleFlash();
+      playGunshot();
 
       const shotOrigin = camera.position.clone();
       const dir = camera.getWorldDirection(new THREE.Vector3());
@@ -912,13 +961,13 @@
         bullet.position.addScaledVector(bullet.userData.direction, 0.95);
         bullet.userData.life -= 1;
 
-        // Bullet-vs-zombie hit test
         let hit = false;
         for (const zombie of zombies) {
           if (!zombie.active) continue;
           const d = bullet.position.distanceTo(zombie.mesh.position);
           if (d < 0.9) {
             zombie.hp -= 18;
+            playZombieHit();
             if (zombie.hp <= 0) {
               state.points += 100;
               state.zombiesKilled += 1;
@@ -948,6 +997,7 @@
       if (state.reserveAmmo <= 0 || state.ammo === 30) return;
 
       state.reloadTimer = 700;
+      playReload();
     }
 
     function finishReload() {
@@ -1017,17 +1067,14 @@
       resolvePlayerWallCollision(player.position);
       resolveWorldBounds(player.position);
 
-      // Camera
       camera.position.set(player.position.x, 1.35, player.position.z);
       camera.rotation.y = input.lookYaw;
       camera.rotation.x = input.lookPitch;
       camera.rotation.z = 0;
 
-      // Gun recoil recovery
       player.recoilKickback *= 0.88;
       player.recoilRotation *= 0.90;
 
-      // Gun bob + recoil
       player.bobPhase += dt * (move.lengthSq() > 0 ? 15 : 8);
       const bob = move.lengthSq() > 0 ? Math.sin(player.bobPhase) * 0.06 : 0.0;
 
@@ -1059,18 +1106,14 @@
           zombie.mesh.rotation.x = 0;
           zombie.mesh.rotation.z = 0;
 
-          // Animated bob
           zombie.mesh.position.y = 0.35 + Math.sin(performance.now() * 0.008 + zombie.phase) * 0.08;
 
-          // Arm swing animation
           const armSwing = Math.sin(zombie.time * 8) * 0.35;
           zombie.mesh.userData.armSwing = armSwing;
 
-          // Leg swing animation
           const legSwing = Math.sin(zombie.time * 8 + Math.PI) * 0.2;
           zombie.mesh.userData.legSwing = legSwing;
 
-          // Apply animations to bones
           zombie.mesh.children.forEach((child) => {
             if (child.userData.joint === "leftArm") {
               child.rotation.z = 0.58 + armSwing;
@@ -1084,7 +1127,6 @@
           });
         }
 
-        // Damage on contact
         if (dist < 1.12) {
           state.health -= 0.32;
           if (state.health <= 0) {
@@ -1119,7 +1161,6 @@
       state.reloadTimer = 0;
       state.lastShotAt = 0;
 
-      // Clear bullets
       for (const bullet of bullets) {
         if (bullet.parent) bullet.parent.remove(bullet);
         bullet.userData.active = false;
@@ -1127,7 +1168,6 @@
       }
       bullets.length = 0;
 
-      // Clear zombies
       for (const zombie of zombies) {
         if (zombie && zombie.active) {
           zombie.mesh.visible = false;
@@ -1151,7 +1191,7 @@
     }
 
     // ============================================================
-    // Input system (tuned for real mobile devices)
+    // Input system
     // ============================================================
     const input = {
       moveX: 0,
@@ -1234,12 +1274,10 @@
       joystickKnob.style.transform = "translate(0px, 0px)";
     }, { passive: false });
 
-    // Look drag: tuned sensitivity for mobile
     function handleLookTouch(touch) {
       const dx = touch.clientX - input.lastLookX;
       const dy = touch.clientY - input.lastLookY;
 
-      // Dampened sensitivity for smooth mobile experience
       input.lookYaw -= dx * 0.0048;
       input.lookPitch = clampPitch(input.lookPitch - dy * 0.0035);
 
@@ -1250,8 +1288,7 @@
     rightZone.addEventListener("touchstart", (event) => {
       if (!event.touches || !event.touches.length) return;
       const touch = event.touches[0];
-      // Prevent interference with buttons
-      if (touch.clientX > window.innerWidth * 0.5 && 
+      if (touch.clientX > window.innerWidth * 0.5 &&
           (touch.clientY < window.innerHeight - 130 || touch.clientX < window.innerWidth - 160)) {
         input.lookPointerId = touch.identifier;
         input.lastLookX = touch.clientX;
